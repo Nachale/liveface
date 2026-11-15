@@ -63,11 +63,12 @@
 <body>
 <canvas id="face"></canvas>
 <video id="keepAwake" src="keepawake.mp4" muted playsinline loop style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+<button id="gear" aria-label="Settings" style="position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;width:44px;height:44px;margin:0;padding:0;border-radius:50%;background:rgba(12,12,16,.55);border:1px solid rgba(255,255,255,.18);font-size:22px;z-index:4">⚙</button>
 <div class="hint" id="hint"><span class="dot" id="dot"></span><span id="hintText">Loading…</span></div>
 <div class="caption" id="caption"><div class="you" id="capYou"></div><span id="capBot" style="opacity:0"></span></div>
 
 <!-- start screen (one tap needed so the phone allows sound and microphone) -->
-<div class="overlay" id="start">
+<div class="overlay" id="start" hidden>
   <div class="card">
     <h1>Live Face</h1>
     <p>Tap Start. Then tap his face whenever you want to talk. Russian or English, he answers in the language you speak.</p>
@@ -119,7 +120,7 @@
     <button class="primary" id="btnSave">Save</button>
     <button id="btnCancel">Cancel</button>
     <div class="small">Settings stay on this phone only.</div>
-    <div class="small" id="ver">Live Face for iPhone 1.1</div>
+    <div class="small" id="ver">Live Face for iPhone 1.2</div>
   </div>
 </div>
 
@@ -257,14 +258,10 @@ async function wakeUp(why) {
   state = 'connecting';
   // the iPhone may have paused or broken the sound while the app was in the background:
   // restart it here, inside the tap, where the phone allows it
-  const rebuild = () => {
-    try { engine.close(); } catch {}
-    engine = new AudioEngine();
-    lips = new LipSync(engine.analyser);
-    engine.out.resume().catch(() => {});
-  };
-  if (engine && (engine.broken || engine.out.state === 'interrupted')) rebuild();          // still inside the tap
-  else if (engine && !(await engine.ensureRunning())) rebuild();
+  // a brand-new sound system for every conversation, made here inside the tap (the iPhone allows
+  // sound only from a tap, and reusing an old one can leave it stuck). It is closed again when the
+  // conversation ends, so the microphone is on only while they talk.
+  freshEngine();
   face.setAsleep(false); face.setMood('happy');
   hint('Waking up…', 'live');
   if (APP) { try { NATIVE.pauseWake(); NATIVE.awake(); } catch {} }
@@ -307,11 +304,18 @@ async function wakeUp(why) {
     }
     if (w === 'error') note = '<span class="err">Could not talk to Gemini: ' + esc(reason || 'unknown error') + '</span>';
     if (w === 'ended') note = 'Conversation ended.';
-    setTimeout(() => goToSleep(note), engine.speaking ? 800 : 0);
+    const done = engine;
+    const finish = () => {
+      if (done.speaking) { setTimeout(finish, 250); return; }      // let the goodbye finish
+      if (engine === done && !session && !mirror) { done.close(); engine = null; lips = null; }
+      goToSleep(note);
+    };
+    setTimeout(finish, 300);
   });
   try { await session.start(); }
   catch (err) {
     session = null;
+    closeEngine();
     goToSleep('<span class="err">Microphone problem: ' + esc(err.message) + '</span>');
   }
 }
@@ -329,6 +333,7 @@ setInterval(() => {
 async function startMirror() {
   if (session) session.stop();
   if (wake) wake.stop();
+  freshEngine();
   await engine.resume();
   await engine.openMic();
   const an = engine.out.createAnalyser();
@@ -342,18 +347,26 @@ async function startMirror() {
 function stopMirror() {
   if (!mirror) return;
   try { engine.micSrc && engine.micSrc.disconnect(mirror.an); } catch {}
-  lips = mirror.prev; mirror = null;
+  mirror = null;
+  closeEngine();
 }
 
 // ---------- start ----------
+function freshEngine() {
+  closeEngine();
+  engine = new AudioEngine();
+  lips = new LipSync(engine.analyser);
+  engine.out.resume().catch(() => {});
+}
+function closeEngine() {
+  if (engine) { try { engine.close(); } catch {} }
+  engine = null; lips = null;
+}
+
 async function start() {
   $('start').hidden = true;
-  engine = new AudioEngine();
-  await engine.resume();
-  lips = new LipSync(engine.analyser);
   if (!APP) {
     await keepAwake();
-    try { await engine.openMic(); } catch {}      // asks for the microphone once, then stays open
   }
   if (pendingNativeWake) { const w = pendingNativeWake; pendingNativeWake = null; state = 'asleep'; wakeUp(w); }
   else if (params.has('autowake')) wakeUp('hello'); else goToSleep();
@@ -385,6 +398,7 @@ $('btnSave').onclick = () => {
 $('btnCancel').onclick = () => { $('settings').hidden = true; };
 $('btnStart').onclick = start;
 $('btnStartSettings').onclick = () => openSettings();
+$('gear').onclick = (e) => { e.stopPropagation(); if (state === 'awake' || state === 'connecting') $('menu').hidden = false; else openSettings(); };
 $('btnTalk').onclick = () => { $('menu').hidden = true; if (mirror) stopMirror(); if (state !== 'awake') { state = 'asleep'; wakeUp('hello'); } };
 $('btnSleep').onclick = () => { $('menu').hidden = true; if (session) session.stop(); else { stopMirror(); goToSleep(); } };
 $('btnMirror').onclick = () => { $('menu').hidden = true; startMirror().catch(e => hint('Mic error: ' + esc(e.message))); };
@@ -411,9 +425,7 @@ face.load().then(() => {
     if (setupNeeded()) openSetup(); else { pushWakeConfig(); start(); }
     return;
   }
-  hint('Tap Start');
-  if (!S.apiKey && !params.get('ws')) $('startNote').textContent = 'First time: open Settings and paste your Gemini API key.';
-  if (params.has('autostart')) start();
+  start();     // no Start screen: tapping his face does everything
 }).catch(e => hint('<span class="err">' + esc(e.message) + '</span>'));
 
 if (!APP && 'serviceWorker' in navigator && !params.has('nosw')) navigator.serviceWorker.register('sw.js').catch(() => {});
