@@ -120,7 +120,9 @@
     <button class="primary" id="btnSave">Save</button>
     <button id="btnCancel">Cancel</button>
     <div class="small">Settings stay on this phone only.</div>
-    <div class="small" id="ver">Live Face for iPhone 1.3</div>
+    <div class="small" id="ver">Live Face for iPhone 1.4</div>
+    <label>Diagnostics (last conversation)</label>
+    <pre id="diag" class="small" style="white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;background:rgba(255,255,255,.06);padding:8px;border-radius:8px;margin:4px 0 0">No conversation yet.</pre>
   </div>
 </div>
 
@@ -186,6 +188,7 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch
 
 const face = new PhotoFace($('face'));
 let engine = null, lips = null, session = null, mirror = null, wake = null;
+let DIAG = {}, noSearchOnce = false;     // what the last conversation sent and got back (Settings › Diagnostics)
 let state = 'start';   // start | asleep | connecting | awake
 
 // ---------- hint + captions ----------
@@ -283,7 +286,10 @@ async function wakeUp(why) {
     (S.search ? ' You can use Google Search for anything current: weather, news, sports, opening hours, prices. Use it instead of saying you have no live data.'
               : ' You cannot look things up online right now; if I ask for live information like the weather, say so briefly.');
   session = new LiveSession(engine, {
-    apiKey: S.apiKey, model: S.model.trim(), voice: S.voice, system, bargeIn: S.barge, search: !!S.search, wsUrl: params.get('ws') || '',
+    apiKey: S.apiKey, model: S.model.trim(), voice: S.voice, system, bargeIn: S.barge, search: !!S.search && !noSearchOnce, wsUrl: params.get('ws') || '',
+    diag: (DIAG = { at: new Date().toLocaleTimeString(), model: S.model.trim(), search: !!S.search && !noSearchOnce,
+                    key: S.apiKey ? '…' + S.apiKey.slice(-4) + ' (' + S.apiKey.length + ' characters)' : 'none',
+                    voice: S.voice, city: S.city, searchNote: DIAG.searchNote || '' }),
   });
   session.addEventListener('status', e => hint(e.detail, 'live'));
   session.addEventListener('ready', () => {
@@ -299,18 +305,22 @@ async function wakeUp(why) {
     face.setListening(true); caption('you', e.detail); clearTimeout(listenTimer); listenTimer = setTimeout(() => face.setListening(false), 900); });
   session.addEventListener('bot', e => { botLine = (botLine + e.detail).slice(-220); caption('bot', botLine); });
   session.addEventListener('turn', () => { botLine = ''; });
+  session.addEventListener('searched', e => hint('Searching Google…' + (e.detail ? ' ' + esc(e.detail) : ''), 'live'));
   session.addEventListener('interrupted', () => { botLine = ''; });
   session.addEventListener('end', e => {
     session = null;
     const { why: w, reason } = e.detail;
     let note = '';
-    if (w === 'error' && S.search && /quota|billing|plan|permission|not supported|search/i.test(reason || '')) {
-      S.search = false; save();
+    if (w === 'error' && S.search && !noSearchOnce && /quota|billing|plan|permission|not supported|search/i.test(reason || '')) {
+      // Google refused with Search on: try this conversation without it, but keep the setting and show why
+      noSearchOnce = true;
+      DIAG.searchNote = 'Google refused Search: ' + (reason || '').slice(0, 200);
       state = 'asleep';
-      hint('Google Search is not available on your Gemini plan – turned it off. Trying again…', 'live');
+      hint('Google refused the search (' + esc((reason || '').slice(0, 120)) + '). Talking without it this time…', 'live');
       setTimeout(() => wakeUp(why), 600);
       return;
     }
+    noSearchOnce = false;
     if (w === 'error') note = '<span class="err">Could not talk to Gemini: ' + esc(reason || 'unknown error') + '</span>';
     if (w === 'ended') note = 'Conversation ended.';
     const done = engine;
@@ -383,6 +393,16 @@ async function start() {
 
 // ---------- settings ----------
 function openSettings(msg) {
+  try {
+    const d = DIAG;
+    $('diag').textContent = !d.at ? 'No conversation yet.' : [
+      'time: ' + d.at, 'model: ' + d.model, 'key: ' + d.key, 'Google Search requested: ' + (d.search ? 'yes' : 'NO'),
+      'Google searches seen: ' + (d.searches || 0) + (d.lastQuery ? '  last: ' + d.lastQuery : ''),
+      'messages from Google: ' + (d.msgs || 0) + (d.legacy ? '  (older setup format)' : ''),
+      'kinds: ' + (d.kinds || []).join(', '),
+      d.searchNote ? 'NOTE: ' + d.searchNote : '', d.lastError ? 'error: ' + d.lastError : '',
+      d.lastClose ? 'closed: ' + d.lastClose : '', 'last message: ' + (d.lastMsg || '')].filter(Boolean).join('\n');
+  } catch {}
   for (const v of VOICES) if (![...$('sVoice').options].some(o => o.value === v)) $('sVoice').add(new Option(v, v));
   $('sScreen').value = S.screen;
   $('sKey').value = S.apiKey; $('sName').value = S.name; $('sVoice').value = S.voice; $('sWake').value = S.wake;
