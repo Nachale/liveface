@@ -23,7 +23,7 @@
   .caption span { display:inline-block; max-width:640px; background:var(--glass); padding:8px 14px; border-radius:14px;
     font-size:17px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); transition:opacity .4s; }
   .caption .you { color:var(--dim); font-size:15px; margin-bottom:6px; }
-  .hint { position:fixed; left:0; right:0; top:calc(18px + env(safe-area-inset-top)); text-align:center;
+  .hint { position:fixed; left:60px; right:60px; top:calc(18px + env(safe-area-inset-top)); text-align:center;
     color:var(--dim); font-size:15px; pointer-events:none; transition:opacity .5s; }
   .hint b { color:var(--fg); font-weight:600; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#555; margin-right:8px; vertical-align:1px; }
@@ -71,7 +71,7 @@
 <div class="overlay" id="start" hidden>
   <div class="card">
     <h1>Live Face</h1>
-    <p>Tap Start. Then tap his face whenever you want to talk. Russian or English, he answers in the language you speak.</p>
+    <p>Tap Start. Then tap her face whenever you want to talk. Russian or English, she answers in the language you speak.</p>
     <button class="primary" id="btnStart">Start</button>
     <button id="btnStartSettings">Settings</button>
     <div class="small" id="startNote"></div>
@@ -84,7 +84,7 @@
     <h1>Menu</h1>
     <button class="primary" id="btnTalk">Talk now</button>
     <button id="btnSleep">Go to sleep</button>
-    <button id="btnMirror">Test his lips with my voice</button>
+    <button id="btnMirror">Test her lips with my voice</button>
     <button id="btnSettings">Settings</button>
     <button id="btnSetup" hidden>Setup (permissions, wake phrase)</button>
     <button id="btnClose">Close menu</button>
@@ -97,7 +97,7 @@
     <h1>Settings</h1>
     <label for="sKey">Gemini API key</label>
     <input id="sKey" type="password" autocomplete="off" placeholder="paste the key from Google AI Studio">
-    <label for="sName">His name</label>
+    <label for="sName">Her name</label>
     <input id="sName" type="text">
     <label for="sVoice">Voice</label>
     <select id="sVoice"></select>
@@ -106,9 +106,9 @@
     <input id="sCity" type="text" placeholder="e.g. Campbell, CA">
     <label for="sPersona">Personality</label>
     <textarea id="sPersona"></textarea>
-    <label for="sIdle">He goes to sleep after this many seconds of silence</label>
+    <label for="sIdle">She goes to sleep after this many seconds of silence</label>
     <input id="sIdle" type="text" inputmode="numeric">
-    <label for="sScreen">While he sleeps, let the phone lock after this many minutes (0 = never)</label>
+    <label for="sScreen">While she sleeps, let the phone lock after this many minutes (0 = never)</label>
     <input id="sScreen" type="text" inputmode="numeric">
     <label for="sModel">Model</label>
     <input id="sModel" type="text">
@@ -116,11 +116,11 @@
     <div class="row"><input id="sSearch" type="checkbox"><label for="sSearch">Look things up on Google (weather, news). Needs a Gemini plan that allows it.</label></div>
     <div class="row"><input id="sMotion" type="checkbox"><label for="sMotion">Gentle head movement (moves the whole picture slightly)</label></div>
     <div class="row"><input id="sCaps" type="checkbox"><label for="sCaps">Show captions</label></div>
-    <div class="row"><input id="sBarge" type="checkbox"><label for="sBarge">Let me interrupt him (use with headphones)</label></div>
+    <div class="row"><input id="sBarge" type="checkbox"><label for="sBarge">Let me interrupt her (use with headphones)</label></div>
     <button class="primary" id="btnSave">Save</button>
     <button id="btnCancel">Cancel</button>
     <div class="small">Settings stay on this phone only.</div>
-    <div class="small" id="ver">Live Face for iPhone 1.2</div>
+    <div class="small" id="ver">Live Face for iPhone 1.3</div>
   </div>
 </div>
 
@@ -156,8 +156,8 @@ const wakeLang = () => (S.lang || '').startsWith('ru') ? 'ru' : 'en';
 const KEY = 'liveface.iphone.v1';
 const VOICES = ['Aoede', 'Kore', 'Leda', 'Zephyr', 'Callirrhoe', 'Autonoe', 'Despina', 'Erinome', 'Laomedeia', 'Sulafat', 'Vindemiatrix', 'Puck', 'Charon', 'Fenrir', 'Orus'];
 const DEFAULTS = {
-  apiKey: '', name: 'Marco', voice: 'Charon', wake: '', lang: 'en-US', bg: false, screen: '5', lastLang: 'ru',
-  persona: 'You are {name}, a warm, kind, good-humoured man who lives in my phone and talks with me like a close friend on a video call. ' +
+  apiKey: '', name: 'Anna', voice: 'Aoede', wake: '', lang: 'en-US', bg: false, screen: '5', lastLang: 'ru',
+  persona: 'You are {name}, a warm, friendly, well-read woman (a librarian by heart) who lives in my phone and talks with me like a close friend on a video call. ' +
     'I speak Russian or English, sometimes mixing them. Always answer in the language I just spoke in; if I switch, switch with me. ' +
     'Keep answers short and natural, one to three sentences unless I ask for more. ' +
     'Use the set_mood tool to show your feelings as you talk. When I say goodbye (or до свидания, пока) or ask you to sleep, say a short goodbye and call go_to_sleep.',
@@ -165,6 +165,15 @@ const DEFAULTS = {
 };
 let S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch {}
+// 1.3: the face is now the librarian (as on the Z Flip). A phone that saved Marco's name, voice and
+// persona switches to hers once; the API key and every other setting stay as they were.
+if (!S.anna) {
+  if (S.name === 'Marco') S.name = DEFAULTS.name;
+  if (S.voice === 'Charon') S.voice = DEFAULTS.voice;
+  if (/good-humoured man/.test(S.persona || '')) S.persona = DEFAULTS.persona;
+  S.anna = true;
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {}
+}
 // one-time move from the old default wake phrase to the new, more reliable one
 try {
   if (APP && !localStorage.getItem('liveface.wake.v2')) {
@@ -245,7 +254,7 @@ function goToSleep(note) {
     wake.start();
     hint((note ? note + '<br>' : '') + 'Sleeping. Say <b>“' + p + '”</b> or tap her.', 'on');
   } else {
-    hint((note ? note + '<br>' : '') + 'Sleeping. Tap him to talk.');
+    hint((note ? note + '<br>' : '') + 'Sleeping. Tap her to talk.');
   }
 }
 
@@ -267,7 +276,7 @@ async function wakeUp(why) {
   if (APP) { try { NATIVE.pauseWake(); NATIVE.awake(); } catch {} }
   await new Promise(r => setTimeout(r, APP ? 450 : 300));   // let the wake listener release the mic
   const now = new Date();
-  const system = S.persona.replaceAll('{name}', S.name || 'Marco') +
+  const system = S.persona.replaceAll('{name}', S.name || 'Anna') +
     '\n\nRight now it is ' + now.toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) +
     ' (time zone ' + Intl.DateTimeFormat().resolvedOptions().timeZone + ').' +
     (S.city ? ' I live in ' + S.city + '; use it when I ask about weather or local things without naming a place.' : '') +
@@ -342,7 +351,7 @@ async function startMirror() {
   lips = new LipSync(an);
   state = 'mirror';
   face.setAsleep(false); face.setMood('happy');
-  hint('Lip test: talk and watch his lips. Tap him to stop.', 'on');
+  hint('Lip test: talk and watch her lips. Tap her to stop.', 'on');
 }
 function stopMirror() {
   if (!mirror) return;
@@ -383,7 +392,7 @@ function openSettings(msg) {
   if (msg) hint('<span class="err">' + msg + '</span>');
 }
 $('btnSave').onclick = () => {
-  S = { ...S, screen: $('sScreen').value.trim() || '5', apiKey: $('sKey').value.trim(), name: $('sName').value.trim() || 'Marco', voice: $('sVoice').value,
+  S = { ...S, screen: $('sScreen').value.trim() || '5', apiKey: $('sKey').value.trim(), name: $('sName').value.trim() || 'Anna', voice: $('sVoice').value,
     wake: $('sWake').value || DEFAULTS.wake, lang: $('sLang').value, persona: $('sPersona').value || DEFAULTS.persona,
     idle: $('sIdle').value || '60', model: $('sModel').value.trim() || DEFAULTS.model, caps: $('sCaps').checked, barge: $('sBarge').checked, bg: $('sBg').checked, city: $('sCity').value.trim(), search: $('sSearch').checked, motion: $('sMotion').checked };
   face.setMotion(S.motion);
@@ -425,7 +434,7 @@ face.load().then(() => {
     if (setupNeeded()) openSetup(); else { pushWakeConfig(); start(); }
     return;
   }
-  start();     // no Start screen: tapping his face does everything
+  start();     // no Start screen: tapping her face does everything
 }).catch(e => hint('<span class="err">' + esc(e.message) + '</span>'));
 
 if (!APP && 'serviceWorker' in navigator && !params.has('nosw')) navigator.serviceWorker.register('sw.js').catch(() => {});
